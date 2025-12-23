@@ -60,15 +60,14 @@ const allNavItems = [
       { name: 'Settings', path: '/chatbot/settings', icon: Settings },
       { name: 'Keywords', path: '/chatbot/keywords', icon: Key },
       { name: 'Flows', path: '/chatbot/flows', icon: Workflow },
-      { name: 'AI Contexts', path: '/chatbot/ai', icon: Sparkles },
-      { name: 'Transfers', path: '/chatbot/transfers', icon: UserX }
+      { name: 'AI Contexts', path: '/chatbot/ai', icon: Sparkles }
     ]
   },
   {
     name: 'Transfers',
     path: '/chatbot/transfers',
     icon: UserX,
-    roles: ['agent']
+    roles: ['admin', 'manager', 'agent']
   },
   {
     name: 'Templates',

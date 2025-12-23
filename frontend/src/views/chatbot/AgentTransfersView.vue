@@ -34,14 +34,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb'
 import { chatbotService, usersService } from '@/services/api'
 import { useTransfersStore, type AgentTransfer } from '@/stores/transfers'
 import { useAuthStore } from '@/stores/auth'
@@ -49,7 +41,6 @@ import { toast } from 'vue-sonner'
 import { useRouter } from 'vue-router'
 import {
   UserX,
-  ArrowLeft,
   Play,
   MessageSquare,
   User,
@@ -256,23 +247,10 @@ function getSourceBadge(source: string) {
     <!-- Header -->
     <header class="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div class="flex h-16 items-center px-6">
-        <Button variant="ghost" size="icon" class="mr-3" @click="router.push('/chatbot')">
-          <ArrowLeft class="h-5 w-5" />
-        </Button>
         <UserX class="h-5 w-5 mr-3" />
         <div class="flex-1">
-          <h1 class="text-xl font-semibold">Agent Transfers</h1>
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink href="/chatbot">Chatbot</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>Transfers</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+          <h1 class="text-xl font-semibold">Transfers</h1>
+          <p class="text-sm text-muted-foreground">Manage agent transfers and queue</p>
         </div>
 
         <!-- Queue pickup for agents -->
