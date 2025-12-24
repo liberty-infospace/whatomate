@@ -2,6 +2,10 @@
 import { RouterView } from 'vue-router'
 import { Toaster } from 'vue-sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useColorMode } from '@/composables/useColorMode'
+
+// Initialize color mode early
+useColorMode()
 </script>
 
 <template>

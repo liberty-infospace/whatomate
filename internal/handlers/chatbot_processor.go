@@ -749,13 +749,13 @@ func (a *App) startFlow(account *models.WhatsAppAccount, session *models.Chatbot
 		a.logSessionMessage(session.ID, "outgoing", flow.InitialMessage, "flow_start")
 	}
 
-	// Send first step message
+	// Send first step message (with skip check)
 	if len(flow.Steps) > 0 {
 		firstStep := &flow.Steps[0]
 		session.CurrentStep = firstStep.StepName
 		a.DB.Model(session).Update("current_step", firstStep.StepName)
 
-		a.sendStepMessage(account, session, contact, firstStep)
+		a.sendStepWithSkipCheck(account, session, contact, firstStep, flow, nil)
 	} else {
 		// No steps, complete the flow
 		a.completeFlow(account, session, contact, flow)
@@ -890,13 +890,14 @@ func (a *App) processFlowResponse(account *models.WhatsAppAccount, session *mode
 		return
 	}
 
-	// Update session and send next step message
+	// Update session and send next step message (with skip check)
 	a.DB.Model(session).Updates(map[string]interface{}{
 		"current_step": nextStep.StepName,
 		"step_retries": 0,
 	})
 
-	a.sendStepMessage(account, session, contact, nextStep)
+	a.Log.Info("Moving to next step", "nextStep", nextStep.StepName, "skipCondition", nextStep.SkipCondition, "sessionData", session.SessionData)
+	a.sendStepWithSkipCheck(account, session, contact, nextStep, &flow, nil)
 }
 
 // completeFlow finishes a flow and sends completion message
@@ -1042,6 +1043,75 @@ func (a *App) replaceVariables(message string, data models.JSONB) string {
 		}
 	}
 	return result
+}
+
+// sendStepWithSkipCheck checks if a step should be skipped and sends the appropriate step message
+// It takes the full flow to find next steps when skipping
+func (a *App) sendStepWithSkipCheck(account *models.WhatsAppAccount, session *models.ChatbotSession, contact *models.Contact, step *models.ChatbotFlowStep, flow *models.ChatbotFlow, skippedSteps map[string]bool) {
+	// Prevent infinite loops
+	if skippedSteps == nil {
+		skippedSteps = make(map[string]bool)
+	}
+	if skippedSteps[step.StepName] {
+		a.Log.Warn("Skip loop detected, completing flow", "step", step.StepName)
+		a.completeFlow(account, session, contact, flow)
+		return
+	}
+
+	// Check if step should be skipped
+	sessionData := session.SessionData
+	if sessionData == nil {
+		sessionData = models.JSONB{}
+	}
+
+	if a.shouldSkipStep(step, sessionData) {
+		a.Log.Info("Skipping step", "step", step.StepName, "condition", step.SkipCondition)
+		skippedSteps[step.StepName] = true
+
+		// Find next step
+		nextStepName := step.NextStep
+		if nextStepName == "" {
+			// Find by step order
+			for i, s := range flow.Steps {
+				if s.StepName == step.StepName && i+1 < len(flow.Steps) {
+					nextStepName = flow.Steps[i+1].StepName
+					break
+				}
+			}
+		}
+
+		if nextStepName == "" {
+			// No next step, complete flow
+			a.completeFlow(account, session, contact, flow)
+			return
+		}
+
+		// Find and execute next step
+		var nextStep *models.ChatbotFlowStep
+		for i := range flow.Steps {
+			if flow.Steps[i].StepName == nextStepName {
+				nextStep = &flow.Steps[i]
+				break
+			}
+		}
+
+		if nextStep == nil {
+			a.Log.Warn("Next step not found after skip, completing flow", "next_step", nextStepName)
+			a.completeFlow(account, session, contact, flow)
+			return
+		}
+
+		// Update session to next step
+		session.CurrentStep = nextStep.StepName
+		a.DB.Model(session).Update("current_step", nextStep.StepName)
+
+		// Recursively check next step (it may also need to be skipped)
+		a.sendStepWithSkipCheck(account, session, contact, nextStep, flow, skippedSteps)
+		return
+	}
+
+	// Not skipping - send the step message normally
+	a.sendStepMessage(account, session, contact, step)
 }
 
 // sendStepMessage sends the appropriate message based on step message_type
@@ -1895,4 +1965,174 @@ func (a *App) isWithinBusinessHours(businessHours models.JSONBArray) bool {
 
 	// If no matching day found, assume outside business hours
 	return false
+}
+
+// shouldSkipStep evaluates a text expression like "(status == 'vip' OR amount > 100) AND name != ''"
+func (a *App) shouldSkipStep(step *models.ChatbotFlowStep, sessionData map[string]interface{}) bool {
+	if step.SkipCondition == "" {
+		a.Log.Debug("No skip condition for step", "step", step.StepName)
+		return false
+	}
+	a.Log.Info("Evaluating skip condition", "step", step.StepName, "condition", step.SkipCondition, "sessionData", sessionData)
+	result := evaluateExpression(step.SkipCondition, sessionData)
+	a.Log.Info("Skip condition result", "step", step.StepName, "result", result)
+	return result
+}
+
+// evaluateExpression handles parentheses, AND, OR, and single conditions
+func evaluateExpression(expr string, data map[string]interface{}) bool {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return false
+	}
+
+	// Handle parentheses first - find innermost pairs and evaluate recursively
+	for strings.Contains(expr, "(") {
+		start := strings.LastIndex(expr, "(")
+		end := strings.Index(expr[start:], ")")
+		if end == -1 {
+			break // Malformed expression
+		}
+		end = start + end
+		inner := expr[start+1 : end]
+		result := evaluateExpression(inner, data)
+		// Replace (inner) with result
+		replacement := "false"
+		if result {
+			replacement = "true"
+		}
+		expr = expr[:start] + replacement + expr[end+1:]
+		expr = strings.TrimSpace(expr)
+	}
+
+	// Handle boolean literals (from parentheses evaluation)
+	if expr == "true" {
+		return true
+	}
+	if expr == "false" {
+		return false
+	}
+
+	// Split by OR (lower precedence) - case insensitive
+	orParts := splitByLogicOperator(expr, " OR ")
+	if len(orParts) > 1 {
+		for _, part := range orParts {
+			if evaluateExpression(part, data) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Split by AND (higher precedence) - case insensitive
+	andParts := splitByLogicOperator(expr, " AND ")
+	if len(andParts) > 1 {
+		for _, part := range andParts {
+			if !evaluateExpression(part, data) {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Single condition
+	return evaluateSingleCondition(expr, data)
+}
+
+// splitByLogicOperator splits by AND/OR while preserving case-insensitivity
+func splitByLogicOperator(expr, op string) []string {
+	upperExpr := strings.ToUpper(expr)
+	upperOp := strings.ToUpper(op)
+
+	var parts []string
+	lastIdx := 0
+	for {
+		idx := strings.Index(upperExpr[lastIdx:], upperOp)
+		if idx == -1 {
+			parts = append(parts, strings.TrimSpace(expr[lastIdx:]))
+			break
+		}
+		parts = append(parts, strings.TrimSpace(expr[lastIdx:lastIdx+idx]))
+		lastIdx = lastIdx + idx + len(op)
+	}
+	return parts
+}
+
+// evaluateSingleCondition handles: phone != '' or age > 18 or status == 'confirmed'
+func evaluateSingleCondition(expr string, data map[string]interface{}) bool {
+	expr = strings.TrimSpace(expr)
+
+	// Handle boolean literals
+	if expr == "true" {
+		return true
+	}
+	if expr == "false" {
+		return false
+	}
+
+	operators := []string{"!=", "==", ">=", "<=", ">", "<"}
+
+	for _, op := range operators {
+		if strings.Contains(expr, op) {
+			parts := strings.SplitN(expr, op, 2)
+			if len(parts) == 2 {
+				varName := strings.TrimSpace(parts[0])
+				expectedValue := strings.TrimSpace(parts[1])
+				expectedValue = strings.Trim(expectedValue, "'\"")
+
+				actualValue := ""
+				if val, exists := data[varName]; exists && val != nil {
+					actualValue = fmt.Sprintf("%v", val)
+				}
+
+				return compareValues(actualValue, op, expectedValue)
+			}
+		}
+	}
+	return false
+}
+
+// compareValues compares two values using the specified operator
+func compareValues(actual, operator, expected string) bool {
+	switch operator {
+	case "==":
+		return actual == expected
+	case "!=":
+		return actual != expected
+	case ">", "<", ">=", "<=":
+		// Try numeric comparison first
+		actualNum, err1 := parseNumber(actual)
+		expectedNum, err2 := parseNumber(expected)
+		if err1 == nil && err2 == nil {
+			switch operator {
+			case ">":
+				return actualNum > expectedNum
+			case "<":
+				return actualNum < expectedNum
+			case ">=":
+				return actualNum >= expectedNum
+			case "<=":
+				return actualNum <= expectedNum
+			}
+		}
+		// Fall back to string comparison
+		switch operator {
+		case ">":
+			return actual > expected
+		case "<":
+			return actual < expected
+		case ">=":
+			return actual >= expected
+		case "<=":
+			return actual <= expected
+		}
+	}
+	return false
+}
+
+// parseNumber attempts to parse a string as a float64
+func parseNumber(s string) (float64, error) {
+	var n float64
+	_, err := fmt.Sscanf(s, "%f", &n)
+	return n, err
 }

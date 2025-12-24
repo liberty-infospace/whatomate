@@ -27,8 +27,12 @@ import {
   Key,
   User,
   UserX,
-  MessageSquareText
+  MessageSquareText,
+  Sun,
+  Moon,
+  Monitor
 } from 'lucide-vue-next'
+import { useColorMode } from '@/composables/useColorMode'
 import { getInitials } from '@/lib/utils'
 
 const route = useRoute()
@@ -36,6 +40,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const isCollapsed = ref(false)
 const isUserMenuOpen = ref(false)
+const { colorMode, isDark, setColorMode } = useColorMode()
 
 // Define all navigation items with role requirements
 const allNavItems = [
@@ -244,6 +249,38 @@ const handleLogout = async () => {
                 <span>Profile</span>
               </Button>
             </RouterLink>
+            <Separator class="my-1" />
+            <div class="text-sm font-medium px-2 py-1.5 text-muted-foreground">Theme</div>
+            <div class="flex gap-1 px-2 py-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8"
+                :class="colorMode === 'light' && 'bg-accent'"
+                @click="setColorMode('light')"
+              >
+                <Sun class="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8"
+                :class="colorMode === 'dark' && 'bg-accent'"
+                @click="setColorMode('dark')"
+              >
+                <Moon class="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8"
+                :class="colorMode === 'system' && 'bg-accent'"
+                @click="setColorMode('system')"
+              >
+                <Monitor class="h-4 w-4" />
+              </Button>
+            </div>
+            <Separator class="my-1" />
             <Button
               variant="ghost"
               class="w-full justify-start px-2 py-1.5 h-auto font-normal"

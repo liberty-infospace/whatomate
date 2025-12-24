@@ -542,6 +542,7 @@ type FlowStepRequest struct {
 	ValidationError string                   `json:"validation_error"`
 	StoreAs         string                   `json:"store_as"`
 	NextStep        string                   `json:"next_step"`
+	SkipCondition   string                   `json:"skip_condition"`
 	RetryOnInvalid  bool                     `json:"retry_on_invalid"`
 	MaxRetries      int                      `json:"max_retries"`
 }
@@ -618,6 +619,7 @@ func (a *App) CreateChatbotFlow(r *fastglue.Request) error {
 			ValidationError: stepReq.ValidationError,
 			StoreAs:         stepReq.StoreAs,
 			NextStep:        stepReq.NextStep,
+			SkipCondition:   stepReq.SkipCondition,
 			RetryOnInvalid:  stepReq.RetryOnInvalid,
 			MaxRetries:      stepReq.MaxRetries,
 		}
@@ -763,6 +765,7 @@ func (a *App) UpdateChatbotFlow(r *fastglue.Request) error {
 				ValidationError: stepReq.ValidationError,
 				StoreAs:         stepReq.StoreAs,
 				NextStep:        stepReq.NextStep,
+				SkipCondition:   stepReq.SkipCondition,
 				RetryOnInvalid:  stepReq.RetryOnInvalid,
 				MaxRetries:      stepReq.MaxRetries,
 			}

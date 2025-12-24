@@ -12,7 +12,7 @@ A modern WhatsApp Business Platform built with Go (Fastglue) and Vue.js (shadcn-
 - **Bulk Messaging**: Send campaigns to multiple contacts
 - **Chatbot Automation**:
   - Keyword-based auto-replies
-  - Conversation flows with branching logic
+  - Conversation flows with branching logic and skip conditions
   - AI-powered responses (OpenAI, Anthropic, Google)
   - Agent transfer support
 - **Canned Responses**: Pre-defined quick replies for agents
@@ -287,6 +287,62 @@ The platform supports three user roles with different permission levels:
 - **Admin**: Full access to all features including user management
 - **Manager**: Full access except cannot manage users
 - **Agent**: Can only chat with contacts assigned to them
+
+## Conversation Flows
+
+Conversation flows allow you to create multi-step automated conversations that collect information from users.
+
+### Skip Conditions
+
+Each step can have an optional **skip condition** that determines whether to skip the step based on previously collected data. If the condition evaluates to `true`, the step is skipped and the flow proceeds to the next step.
+
+#### Syntax
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `==` | Equals | `status == 'confirmed'` |
+| `!=` | Not equals | `phone != ''` (not empty) |
+| `>` | Greater than | `amount > 1000` |
+| `<` | Less than | `age < 18` |
+| `>=` | Greater or equal | `count >= 5` |
+| `<=` | Less or equal | `score <= 100` |
+| `AND` | All conditions must be true | `name != '' AND phone != ''` |
+| `OR` | Any condition can be true | `status == 'vip' OR amount > 1000` |
+| `()` | Grouping | `(status == 'vip' OR amount > 100) AND name != ''` |
+
+#### Examples
+
+```
+# Skip if phone already collected
+phone != ''
+
+# Skip if both name and email are provided
+name != '' AND email != ''
+
+# Skip for VIP users or high-value orders
+status == 'vip' OR amount > 1000
+
+# Complex condition with grouping
+(status == 'vip' OR amount > 100) AND name != ''
+```
+
+#### Button Responses
+
+When a user clicks a button, two variables are stored:
+- `{store_as}` - The button ID (e.g., `btn_1`)
+- `{store_as}_title` - The button text (e.g., `Yes`)
+
+To check the button text in skip conditions, use the `_title` suffix:
+```
+# Check button text
+choice_title == 'Yes'
+
+# Check button ID
+choice == 'btn_yes'
+
+# Check if any button was clicked (not empty)
+choice != ''
+```
 
 ## WhatsApp Setup
 

@@ -83,6 +83,7 @@ interface FlowStep {
   next_step: string
   retry_on_invalid: boolean
   max_retries: number
+  skip_condition: string
 }
 
 interface WebhookConfig {
@@ -166,7 +167,8 @@ const defaultStep: FlowStep = {
   store_as: '',
   next_step: '',
   retry_on_invalid: true,
-  max_retries: 3
+  max_retries: 3,
+  skip_condition: ''
 }
 
 onMounted(async () => {
@@ -231,7 +233,11 @@ async function openEditDialog(flow: ChatbotFlow) {
       initial_message: fullFlow.initial_message || fullFlow.InitialMessage || '',
       completion_message: fullFlow.completion_message || fullFlow.CompletionMessage || '',
       on_complete_action: fullFlow.on_complete_action || fullFlow.OnCompleteAction || 'none',
-      completion_config: fullFlow.completion_config || fullFlow.CompletionConfig || { ...defaultWebhookConfig },
+      completion_config: {
+        ...defaultWebhookConfig,
+        ...(fullFlow.completion_config || fullFlow.CompletionConfig || {}),
+        headers: (fullFlow.completion_config || fullFlow.CompletionConfig || {}).headers || {}
+      },
       enabled: fullFlow.is_enabled ?? fullFlow.IsEnabled ?? fullFlow.enabled ?? true,
       steps: (fullFlow.steps || fullFlow.Steps || []).map((s: any, idx: number) => ({
         id: s.id || s.ID,
@@ -241,14 +247,19 @@ async function openEditDialog(flow: ChatbotFlow) {
         message_type: s.message_type || s.MessageType || 'text',
         input_type: s.input_type || s.InputType || 'text',
         input_config: s.input_config || s.InputConfig || {},
-        api_config: s.api_config || s.ApiConfig || { ...defaultApiConfig },
+        api_config: {
+          ...defaultApiConfig,
+          ...(s.api_config || s.ApiConfig || {}),
+          headers: (s.api_config || s.ApiConfig || {}).headers || {}
+        },
         buttons: s.buttons || s.Buttons || [],
         validation_regex: s.validation_regex || s.ValidationRegex || '',
         validation_error: s.validation_error || s.ValidationError || 'Invalid input. Please try again.',
         store_as: s.store_as || s.StoreAs || '',
         next_step: s.next_step || s.NextStep || '',
         retry_on_invalid: s.retry_on_invalid ?? s.RetryOnInvalid ?? true,
-        max_retries: s.max_retries ?? s.MaxRetries ?? 3
+        max_retries: s.max_retries ?? s.MaxRetries ?? 3,
+        skip_condition: s.skip_condition || s.SkipCondition || ''
       }))
     }
     expandedStep.value = formData.value.steps.length > 0 ? 0 : null
@@ -603,7 +614,7 @@ function removeButton(step: FlowStep, index: number) {
                             Add Header
                           </Button>
                         </div>
-                        <div v-if="Object.keys(formData.completion_config.headers).length > 0" class="space-y-2">
+                        <div v-if="formData.completion_config.headers && Object.keys(formData.completion_config.headers).length > 0" class="space-y-2">
                           <div
                             v-for="(value, key) in formData.completion_config.headers"
                             :key="key"
@@ -816,7 +827,7 @@ function removeButton(step: FlowStep, index: number) {
                                 Add Header
                               </Button>
                             </div>
-                            <div v-if="Object.keys(step.api_config.headers).length > 0" class="space-y-2">
+                            <div v-if="step.api_config.headers && Object.keys(step.api_config.headers).length > 0" class="space-y-2">
                               <div
                                 v-for="(value, key) in step.api_config.headers"
                                 :key="key"
@@ -977,6 +988,24 @@ function removeButton(step: FlowStep, index: number) {
                               class="w-20"
                             />
                           </div>
+                        </div>
+
+                        <!-- Skip Condition -->
+                        <div class="space-y-2 pt-2 border-t">
+                          <Label>Skip Condition (optional)</Label>
+                          <Input
+                            v-model="step.skip_condition"
+                            placeholder="e.g., phone != '' AND email != ''"
+                          />
+                          <p class="text-xs text-muted-foreground">
+                            Skip this step if condition is true. Use variables from previous steps.
+                            <br />
+                            Examples: <code class="text-xs bg-muted px-1 rounded">phone != ''</code>,
+                            <code class="text-xs bg-muted px-1 rounded">name != '' AND phone != ''</code>,
+                            <code class="text-xs bg-muted px-1 rounded">status == 'vip' OR amount > 1000</code>
+                            <br />
+                            For buttons: use <code class="text-xs bg-muted px-1 rounded">var_title</code> for button text, <code class="text-xs bg-muted px-1 rounded">var</code> for button ID.
+                          </p>
                         </div>
                       </div>
                     </div>
