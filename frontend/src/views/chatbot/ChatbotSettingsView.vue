@@ -24,8 +24,17 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList
+} from '@/components/ui/command'
 import { toast } from 'vue-sonner'
-import { Settings, Bot, Loader2, Brain, Plus, X, Clock, ArrowLeft, AlertTriangle } from 'lucide-vue-next'
+import { Settings, Bot, Loader2, Brain, Plus, X, Clock, ArrowLeft, AlertTriangle, Check, ChevronsUpDown, UserPlus } from 'lucide-vue-next'
 import { chatbotService, usersService } from '@/services/api'
 
 interface MessageButton {
@@ -118,6 +127,20 @@ const slaSettings = ref({
 
 const isSLAEnabled = ref(false)
 const availableUsers = ref<{ id: string; full_name: string }[]>([])
+const escalationComboboxOpen = ref(false)
+
+// Computed properties for escalation users
+const selectedEscalationUsers = computed(() => {
+  return availableUsers.value.filter(u =>
+    slaSettings.value.sla_escalation_notify_ids.includes(u.id)
+  )
+})
+
+const unselectedUsers = computed(() => {
+  return availableUsers.value.filter(u =>
+    !slaSettings.value.sla_escalation_notify_ids.includes(u.id)
+  )
+})
 
 // Separate ref for Switch to ensure reactivity
 const isAIEnabled = ref(false)
@@ -303,6 +326,20 @@ async function saveSLASettings() {
     toast.error('Failed to save SLA settings')
   } finally {
     isSubmitting.value = false
+  }
+}
+
+function addEscalationUser(userId: string) {
+  if (!slaSettings.value.sla_escalation_notify_ids.includes(userId)) {
+    slaSettings.value.sla_escalation_notify_ids.push(userId)
+  }
+  escalationComboboxOpen.value = false
+}
+
+function removeEscalationUser(userId: string) {
+  const index = slaSettings.value.sla_escalation_notify_ids.indexOf(userId)
+  if (index !== -1) {
+    slaSettings.value.sla_escalation_notify_ids.splice(index, 1)
   }
 }
 
@@ -716,31 +753,60 @@ function isUserSelected(userId: string): boolean {
 
                   <Separator />
 
-                  <div class="space-y-2">
-                    <Label>Escalation Notify Contacts</Label>
-                    <p class="text-xs text-muted-foreground mb-2">Select users to notify when transfers are escalated</p>
-                    <div class="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
-                      <div
-                        v-for="user in availableUsers"
-                        :key="user.id"
-                        class="flex items-center gap-3 p-2 rounded hover:bg-muted cursor-pointer"
-                        @click="toggleEscalationUser(user.id)"
-                      >
-                        <input
-                          type="checkbox"
-                          :checked="isUserSelected(user.id)"
-                          class="h-4 w-4 rounded border-gray-300"
-                          @click.stop
-                          @change="toggleEscalationUser(user.id)"
-                        />
-                        <span class="text-sm">{{ user.full_name }}</span>
+                  <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <Label>Escalation Notify Contacts</Label>
+                        <p class="text-xs text-muted-foreground">Users to notify when transfers are escalated</p>
                       </div>
-                      <div v-if="availableUsers.length === 0" class="text-sm text-muted-foreground text-center py-2">
-                        No users available
+                      <Popover v-model:open="escalationComboboxOpen">
+                        <PopoverTrigger as-child>
+                          <Button variant="outline" size="sm" class="gap-2" :disabled="unselectedUsers.length === 0">
+                            <UserPlus class="h-4 w-4" />
+                            Add User
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent class="w-[250px] p-0" align="end">
+                          <Command>
+                            <CommandInput placeholder="Search users..." />
+                            <CommandList>
+                              <CommandEmpty>No users found.</CommandEmpty>
+                              <CommandGroup>
+                                <CommandItem
+                                  v-for="user in unselectedUsers"
+                                  :key="user.id"
+                                  :value="user.full_name"
+                                  @select="addEscalationUser(user.id)"
+                                  class="cursor-pointer"
+                                >
+                                  {{ user.full_name }}
+                                </CommandItem>
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+
+                    <!-- Selected users list -->
+                    <div v-if="selectedEscalationUsers.length > 0" class="flex flex-wrap gap-2">
+                      <div
+                        v-for="user in selectedEscalationUsers"
+                        :key="user.id"
+                        class="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-full text-sm"
+                      >
+                        <span>{{ user.full_name }}</span>
+                        <button
+                          type="button"
+                          @click="removeEscalationUser(user.id)"
+                          class="text-muted-foreground hover:text-foreground"
+                        >
+                          <X class="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
-                    <p v-if="slaSettings.sla_escalation_notify_ids.length > 0" class="text-xs text-muted-foreground">
-                      {{ slaSettings.sla_escalation_notify_ids.length }} user(s) selected
+                    <p v-else class="text-sm text-muted-foreground italic">
+                      No users selected for escalation notifications
                     </p>
                   </div>
                 </div>
