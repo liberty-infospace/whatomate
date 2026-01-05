@@ -434,12 +434,8 @@ func (a *App) CreateAgentTransfer(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusConflict, "Contact already has an active transfer", nil, "")
 	}
 
-	// Get chatbot settings to check AssignToSameAgent
-	var settings models.ChatbotSettings
-	a.DB.Where("organization_id = ? AND whats_app_account = ?", orgID, req.WhatsAppAccount).
-		Or("organization_id = ? AND whats_app_account = ''", orgID).
-		Order("whats_app_account DESC"). // Prefer account-specific settings
-		First(&settings)
+	// Get chatbot settings to check AssignToSameAgent (use cache)
+	settings, _ := a.getChatbotSettingsCached(orgID, req.WhatsAppAccount)
 
 	// Parse team_id if provided
 	var teamID *uuid.UUID
@@ -510,7 +506,9 @@ func (a *App) CreateAgentTransfer(r *fastglue.Request) error {
 	}
 
 	// Set SLA deadlines if SLA is enabled
-	a.SetSLADeadlines(&transfer, &settings)
+	if settings != nil {
+		a.SetSLADeadlines(&transfer, settings)
+	}
 
 	// If agent is already assigned, mark as picked up
 	if agentID != nil {
@@ -665,15 +663,11 @@ func (a *App) ResumeFromTransfer(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to resume transfer", nil, "")
 	}
 
-	// Get chatbot settings to check AssignToSameAgent
-	var settings models.ChatbotSettings
-	a.DB.Where("organization_id = ? AND whats_app_account = ?", orgID, transfer.WhatsAppAccount).
-		Or("organization_id = ? AND whats_app_account = ''", orgID).
-		Order("whats_app_account DESC").
-		First(&settings)
+	// Get chatbot settings to check AssignToSameAgent (use cache)
+	settings, _ := a.getChatbotSettingsCached(orgID, transfer.WhatsAppAccount)
 
 	// If AssignToSameAgent is disabled, unassign the contact
-	if !settings.AssignToSameAgent {
+	if settings != nil && !settings.AssignToSameAgent {
 		a.DB.Model(&models.Contact{}).
 			Where("id = ?", transfer.ContactID).
 			Update("assigned_user_id", nil)
@@ -852,11 +846,10 @@ func (a *App) PickNextTransfer(r *fastglue.Request) error {
 	userID, _ := r.RequestCtx.UserValue("user_id").(uuid.UUID)
 	role, _ := r.RequestCtx.UserValue("role").(string)
 
-	// Check if agent queue pickup is allowed
-	var settings models.ChatbotSettings
-	a.DB.Where("organization_id = ? AND whats_app_account = ?", orgID, "").First(&settings)
+	// Check if agent queue pickup is allowed (use cache)
+	settings, _ := a.getChatbotSettingsCached(orgID, "")
 
-	if role == "agent" && !settings.AllowAgentQueuePickup {
+	if role == "agent" && settings != nil && !settings.AllowAgentQueuePickup {
 		return r.SendErrorEnvelope(fasthttp.StatusForbidden, "Queue pickup is not allowed", nil, "")
 	}
 
@@ -1152,12 +1145,8 @@ func (a *App) createTransferToQueue(account *models.WhatsAppAccount, contact *mo
 		return
 	}
 
-	// Get chatbot settings for SLA
-	var settings models.ChatbotSettings
-	a.DB.Where("organization_id = ? AND whats_app_account = ?", account.OrganizationID, account.Name).
-		Or("organization_id = ? AND whats_app_account = ''", account.OrganizationID).
-		Order("whats_app_account DESC").
-		First(&settings)
+	// Get chatbot settings for SLA (use cache)
+	settings, _ := a.getChatbotSettingsCached(account.OrganizationID, account.Name)
 
 	// Create unassigned transfer (goes to queue)
 	transfer := models.AgentTransfer{
@@ -1173,7 +1162,9 @@ func (a *App) createTransferToQueue(account *models.WhatsAppAccount, contact *mo
 	}
 
 	// Set SLA deadlines
-	a.SetSLADeadlines(&transfer, &settings)
+	if settings != nil {
+		a.SetSLADeadlines(&transfer, settings)
+	}
 
 	if err := a.DB.Create(&transfer).Error; err != nil {
 		a.Log.Error("Failed to create transfer to queue", "error", err, "contact_id", contact.ID, "source", source)
@@ -1199,15 +1190,11 @@ func (a *App) createTransferFromKeyword(account *models.WhatsAppAccount, contact
 		return
 	}
 
-	// Get chatbot settings to check AssignToSameAgent and business hours
-	var settings models.ChatbotSettings
-	a.DB.Where("organization_id = ? AND whats_app_account = ?", account.OrganizationID, account.Name).
-		Or("organization_id = ? AND whats_app_account = ''", account.OrganizationID).
-		Order("whats_app_account DESC"). // Prefer account-specific settings
-		First(&settings)
+	// Get chatbot settings to check AssignToSameAgent and business hours (use cache)
+	settings, _ := a.getChatbotSettingsCached(account.OrganizationID, account.Name)
 
 	// Check business hours - if outside hours, send out of hours message instead of transfer
-	if settings.BusinessHoursEnabled && len(settings.BusinessHours) > 0 {
+	if settings != nil && settings.BusinessHoursEnabled && len(settings.BusinessHours) > 0 {
 		if !a.isWithinBusinessHours(settings.BusinessHours) {
 			a.Log.Info("Outside business hours, sending out of hours message instead of transfer", "contact_id", contact.ID)
 			if settings.OutOfHoursMessage != "" {
@@ -1219,7 +1206,7 @@ func (a *App) createTransferFromKeyword(account *models.WhatsAppAccount, contact
 
 	// Determine agent assignment
 	var agentID *uuid.UUID
-	if settings.AssignToSameAgent && contact.AssignedUserID != nil {
+	if settings != nil && settings.AssignToSameAgent && contact.AssignedUserID != nil {
 		// Check if the assigned agent is available
 		var assignedAgent models.User
 		if a.DB.Where("id = ?", contact.AssignedUserID).First(&assignedAgent).Error == nil && assignedAgent.IsAvailable {
@@ -1242,7 +1229,9 @@ func (a *App) createTransferFromKeyword(account *models.WhatsAppAccount, contact
 	}
 
 	// Set SLA deadlines
-	a.SetSLADeadlines(&transfer, &settings)
+	if settings != nil {
+		a.SetSLADeadlines(&transfer, settings)
+	}
 
 	// If agent is already assigned, mark as picked up
 	if agentID != nil {
@@ -1404,12 +1393,8 @@ func (a *App) createTransferToTeam(account *models.WhatsAppAccount, contact *mod
 		return
 	}
 
-	// Get chatbot settings for SLA
-	var settings models.ChatbotSettings
-	a.DB.Where("organization_id = ? AND whats_app_account = ?", account.OrganizationID, account.Name).
-		Or("organization_id = ? AND whats_app_account = ''", account.OrganizationID).
-		Order("whats_app_account DESC").
-		First(&settings)
+	// Get chatbot settings for SLA (use cache)
+	settings, _ := a.getChatbotSettingsCached(account.OrganizationID, account.Name)
 
 	// Apply team's assignment strategy
 	agentID := a.assignToTeam(teamID, account.OrganizationID)
@@ -1430,7 +1415,9 @@ func (a *App) createTransferToTeam(account *models.WhatsAppAccount, contact *mod
 	}
 
 	// Set SLA deadlines
-	a.SetSLADeadlines(&transfer, &settings)
+	if settings != nil {
+		a.SetSLADeadlines(&transfer, settings)
+	}
 
 	// If agent is already assigned, mark as picked up
 	if agentID != nil {

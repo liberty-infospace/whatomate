@@ -277,8 +277,8 @@ func (a *App) GetMessages(r *fastglue.Request) error {
 
 	// Check if agent should only see current conversation
 	if userRole == "agent" {
-		var settings models.ChatbotSettings
-		if err := a.DB.Where("organization_id = ?", orgID).First(&settings).Error; err == nil {
+		settings, err := a.getChatbotSettingsCached(orgID, "")
+		if err == nil {
 			if settings.AgentCurrentConversationOnly {
 				// Find the most recent session for this contact
 				var session models.ChatbotSession
