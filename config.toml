@@ -25,13 +25,13 @@ max_idle_conns = 5
 conn_max_lifetime = 300
 
 [redis]
-host = "localhost"
+host = "shinkansen.proxy.rlwy.net"
 port = 6379
-password = ""
+password = "RgcmyjPUiasoyvPoaFGOeIcwHXqxtlvL"
 db = 0
 
 [jwt]
-secret = "your-super-secret-jwt-key-change-in-production"
+secret = "VPRNxLcIs6lnppO8A4OeoMZHviRp29H9QEWuUbf21R21om408Gd9vJGAmN6cfv10+vR5XwSRZbefsxLSYW6gmA=="
 access_expiry_mins = 15
 refresh_expiry_days = 7
 
